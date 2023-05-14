@@ -176,8 +176,11 @@ class AddSocial(APIView):
         urlvalidator = validators.URLValidator(schemes=["http", "https", "ftp", "ftps", "mailto", "tel", "bank"])
         tempdict = self.request.POST.copy()
         try:
+            # validates url, if it`s not validated then it will save without custom uri.
             urlvalidator(tempdict["url"])
             prefixes = ["http", "https"]
+
+            # Get if it has any custom uri
             uri = self.custom_uri_class.objects.filter(name=tempdict["type"]).first()
             if uri is not None:
                 for prefix in prefixes:
@@ -187,6 +190,8 @@ class AddSocial(APIView):
                         new_url = tempdict["url"][index + length:] + uri.uri
                         tempdict["url"] = new_url
         except:
+
+            # Get if it has any custom uri
             uri = self.custom_uri_class.objects.filter(name=tempdict["type"]).first()
             if uri is None:
                 raise ValidationError("Invalid Data If you are entering a Link please use ('http://' or 'https://' )",
@@ -248,15 +253,18 @@ class ChangePassword(UpdateAPIView):
         self.object = self.get_object()
         serializer = self.serializer_class(data=request.data)
 
-        if serializer.is_valid():
+        if serializer.is_valid(raise_exception=True):
             # Check old password
             old_password = serializer.data.get("old_password")
             if not self.object.check_password(old_password):
                 return Response({"old_password": ["Wrong password."]},
                                 status=status.HTTP_400_BAD_REQUEST)
-            # set_password also hashes the password that the user will get
+
+            # create new access token because of new password
             user_access_token = generate_access_token(
                 authenticate(username=self.object.username, password=old_password))
+
+            # Setting new password
             self.object.set_password(serializer.data.get("new_password"))
             self.object.save()
             response = Response()
@@ -285,29 +293,38 @@ class EditDetails(UpdateAPIView, CreateAPIView):
         obj = self.model.objects.filter(user=self.kwargs[self.lookup_url_kwarg], type=type).first()
         return obj
 
+    # request has 3 diffrent row {"Telephone", "Mail", "Pin"}
     def post(self, request, **kwargs):
+        # Iteration over all diffrent rows
         for type in request.data:
-            print(type)
+
+            # If a type has a custom uri for example 'Telephone' has 'tel://' searches
             uri = self.uri_model.objects.filter(name=type).first()
 
+            # if uri is none url will be blank
             if uri is not None:
                 data = {
-                    "type" : type,
-                    "content" : request.data[type],
+                    "type": type,
+                    "content": request.data[type],
                     "url": uri.uri + request.data[type],
                     "user": self.kwargs[self.lookup_url_kwarg]
                 }
             else:
                 data = {
-                    "type" : type,
-                    "content" : request.data[type],
+                    "type": type,
+                    "content": request.data[type],
                     "user": self.kwargs[self.lookup_url_kwarg]
                 }
 
-
+            # Serializing data
             serializer = self.serializer_class(data=data)
+
+            # Gets profile model if already have
             obj = self.get_object(type)
+
             if serializer.is_valid(raise_exception=True):
+
+                # Checks model is already inserted if inserted then updates data
                 if obj is not None:
                     obj.type = serializer.data.get("type")
                     obj.content = serializer.data.get("content")
@@ -317,9 +334,9 @@ class EditDetails(UpdateAPIView, CreateAPIView):
                     obj.save()
                     self.response.status_code = status.HTTP_200_OK
                 else:
-                    db_instance = self.model(type=serializer.data.get("type"), content=serializer.data.get("content"), url=serializer.data.get("url"), user_id=serializer.data.get("user"))
+                    db_instance = self.model(type=serializer.data.get("type"), content=serializer.data.get("content"),
+                                             url=serializer.data.get("url"), user_id=serializer.data.get("user"))
                     db_instance.save()
                     self.response.status_code = status.HTTP_201_CREATED
-
 
         return self.response
