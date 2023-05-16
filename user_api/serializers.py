@@ -67,3 +67,11 @@ class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True)
     new_password_confirmation = serializers.CharField(required=True)
+
+class UserProfileSerializer(serializers.ModelSerializer):
+
+    # To prevent multiple users we do not provide change name options
+    class Meta:
+        model = get_user_model()
+        fields = ["user", "title"]
+

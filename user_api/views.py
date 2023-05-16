@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
 from .serializers import UserRegistrationSerializer, UserLoginSerializer, UserViewSerializer, ProfileSerializer, \
-    SocialSerializer, ImageSeriliazer, ChangePasswordSerializer
+    SocialSerializer, ImageSeriliazer, ChangePasswordSerializer, UserProfileSerializer
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, RetrieveAPIView, CreateAPIView, UpdateAPIView
 from rest_framework.authentication import TokenAuthentication
@@ -340,3 +340,39 @@ class EditDetails(UpdateAPIView, CreateAPIView):
                     self.response.status_code = status.HTTP_201_CREATED
 
         return self.response
+
+
+class EditProfile(UpdateAPIView, CreateAPIView):
+    user_model = get_user_model()
+    serializer_class = UserProfileSerializer
+    permission_classes = (AllowAny,)
+    lookup_url_kwarg = "userid"
+    authentication_classes = (TokenAuthentication,)
+
+    response = Response
+
+    def get_object(self):
+        obj = self.user_model.objects.filter(user=self.kwargs[self.lookup_url_kwarg]).first()
+        return obj
+
+    # request has 3 diffrent row {"Telephone", "Mail", "Pin"}
+    def post(self, request, **kwargs):
+        # If a type has a custom uri for example 'Telephone' has 'tel://' searches
+
+        obj = self.get_object()
+
+        data = {
+            "user": request.data["user"],
+            "title": request.data["title"]
+        }
+
+        serializer = self.serializer_class(data=data)
+
+        if obj is None:
+            self.response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        else:
+            if serializer.is_valid(raise_exception=True):
+                obj.user = data["user"]
+                obj.title = data["title"]
+                obj.save()
+                self.response.status_code = status.HTTP_200_OK
