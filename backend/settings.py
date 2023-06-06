@@ -29,13 +29,24 @@ SECRET_KEY = env("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+STATIC_URL = "/django-static/"
+STATIC_ROOT = "staticfiles"
+
+ALLOWED_HOSTS = ['*']
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
+    'http://localhost',
     'http://127.0.0.1:5173',
+    'http://127.0.0.1',
+    'https://127.0.0.1',
+    'http://127.0.0.1:80',
+    'https://127.0.0.1:80',
+    'https://localhost:5173',
+    'https://127.0.0.1:5173',
+
 ]
-CORS_ALLOW_ALL = False
+CORS_ALLOW_ALL = True
 
 CORS_ALLOW_CREDENTIALS = True
 
