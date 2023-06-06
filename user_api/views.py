@@ -1,5 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
+from rest_framework.parsers import FormParser, MultiPartParser
+
 from .serializers import UserRegistrationSerializer, UserLoginSerializer, UserViewSerializer, ProfileSerializer, \
     SocialSerializer, ImageSeriliazer, ChangePasswordSerializer, UserProfileSerializer
 from rest_framework.views import APIView
@@ -12,7 +14,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from .utils import generate_access_token
+from .utils import generate_access_token, generate_random_image_name
 from .models import AppUser, Profile, Social, Image, CustomUri
 from datetime import datetime, timedelta
 from user_api.customModels import CustomURLField
@@ -67,7 +69,12 @@ class UserLogin(APIView):
         user_instance = authenticate(username=username, password=user_password)
 
         if not user_instance:
-            raise AuthenticationFailed('User not found.')
+            response = Response()
+            response.status_code = status.HTTP_401_UNAUTHORIZED
+            response.data = {
+                "message": "User Not Found."
+            }
+            return response
 
         if user_instance.is_active:
             user_access_token = generate_access_token(user_instance)
@@ -165,42 +172,57 @@ class GetUser(RetrieveAPIView):
         return user
 
 
-class AddSocial(APIView):
+class AddSocial(RetrieveAPIView, CreateAPIView, UpdateAPIView, APIView):
     permission_classes = (AllowAny,)
     authentication_classes = (TokenAuthentication,)
     serializer_class = SocialSerializer
     custom_uri_class = CustomUri
+    lookup_url_kwarg = "contentid"
+    user_model = get_user_model()
 
-    def post(self, request):
+    """
+    It is Custom basic parser for specific uris, current case it we dont need so much to this function we just using
+    while editing urls.
+    """
+    def validate_and_change(self, data):
 
-        urlvalidator = validators.URLValidator(schemes=["http", "https", "ftp", "ftps", "mailto", "tel", "bank"])
-        tempdict = self.request.POST.copy()
-        try:
-            # validates url, if it`s not validated then it will save without custom uri.
-            urlvalidator(tempdict["url"])
-            prefixes = ["http", "https"]
+        prefixes = ["http", "https", "ftp", "ftps", "mailto", "tel", "bank"]
+        # Custom Parser
+        for prefix in prefixes:
+            if prefix in data["url"]:
+                prefix = prefix + "://"
+                index = data["url"].find(prefix)
+                new_url_w_no_prefix = data["url"][index + len(prefix):]
+                data["url"] = new_url_w_no_prefix
 
-            # Get if it has any custom uri
-            uri = self.custom_uri_class.objects.filter(name=tempdict["type"]).first()
-            if uri is not None:
-                for prefix in prefixes:
-                    if prefix in tempdict["url"]:
-                        index = tempdict["url"].index(prefix)
-                        length = tempdict["url"].count(prefix)
-                        new_url = tempdict["url"][index + length:] + uri.uri
-                        tempdict["url"] = new_url
+        uri = self.custom_uri_class.objects.filter(name=data["type"]).first()
+        new_url = data["url"]
+        if uri is not None:
+            new_url = data["url"]
+        else:
+            new_url = "http://" + data["url"]
+
+        data["url"] = new_url
+        return data
+
+    """
         except:
-
             # Get if it has any custom uri
-            uri = self.custom_uri_class.objects.filter(name=tempdict["type"]).first()
+            uri = self.custom_uri_class.objects.filter(name=data["type"]).first()
+            new_url = None
             if uri is None:
-                raise ValidationError("Invalid Data If you are entering a Link please use ('http://' or 'https://' )",
-                                      code="invalid")
+                new_url = "http://" + data["url"]
+            else:
+                new_url = uri.uri + data["url"]
+            data["url"] = new_url
+            return data
+    """
 
-            new_url = uri.uri + tempdict["url"]
-            tempdict["url"] = new_url
+    def post(self, request, *args, **kwargs):
 
-        serializer = self.serializer_class(data=tempdict)
+        data = self.validate_and_change(self.request.data.copy())
+
+        serializer = self.serializer_class(data=data)
 
         if serializer.is_valid(raise_exception=True):
             new_content = serializer.save()
@@ -209,17 +231,112 @@ class AddSocial(APIView):
                 return response
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def get_object(self):
+        content_id = self.kwargs[self.lookup_url_kwarg]
+        social = Social.objects.filter(social_id=content_id).first()
+        return social
 
-class GetPhoto(RetrieveAPIView):
+    def delete(self, request, *args, **kwargs):
+        obj = self.get_object()
+        response = Response()
+        if obj is not None:
+            obj.delete()
+            if self.get_object() is None:
+                response.status_code = status.HTTP_200_OK
+                response.data = {
+                    "message": "Successfully Deleted"
+                }
+                return response
+        else:
+            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            response.data = {
+                "message": "Something Happen Please Try Again Later."
+            }
+            return response
+
+    def update(self, request, *args, **kwargs):
+        obj = self.get_object()
+        response = Response()
+        req = request.data.copy()
+
+        if obj is not None:
+            data = {
+                "social_id": obj.social_id,
+                "type": obj.type,
+                "url": req["url"],
+                "user": obj.user.user_id,
+            }
+
+            data = self.validate_and_change(data)
+            serializer = self.serializer_class(data=data)
+
+            if serializer.is_valid():
+                obj.social_id = data["social_id"]
+                obj.type = data["type"]
+                obj.url = data["url"]
+                obj.user = self.user_model.objects.filter(user_id=data["user"]).first()
+                obj.save()
+
+                response = Response(status=status.HTTP_201_CREATED, data={"message": "Successfully Updated"})
+                return response
+            else:
+                response.status_code = status.HTTP_400_BAD_REQUEST
+                response.data = {
+                    "message": "Data Invalid."
+                }
+                return response
+
+        else:
+            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            response.data = {
+                "message": "Something Happen Please Try Again Later."
+            }
+            return response
+
+
+class Photo(RetrieveAPIView, CreateAPIView, UpdateAPIView):
     permission_classes = AllowAny,
     lookup_url_kwarg = "userid"
     serializer_class = ImageSeriliazer
+    authentication_classes = (TokenAuthentication,)
+    parser_classes = (MultiPartParser, FormParser)
     model = Image
 
     def get_object(self):
         uid = self.kwargs[self.lookup_url_kwarg]
         image = self.model.objects.filter(user=uid).first()
         return image
+
+    def post(self, request, *args, **kwargs):
+        obj = self.get_object()
+
+        data = {
+            "user": request.data["user"],
+            "image": request.data["image_url"]
+        }
+
+        serializer = self.serializer_class(data=data)
+        if serializer.is_valid():
+            if obj is not None:
+                obj.delete()
+            # Randominize Image Names
+            request.data["image_url"].name = generate_random_image_name(data["user"], request.data["image_url"].name)
+            db_instance = self.model(user_id=data["user"], image=data["image"])
+            db_instance.save()
+            if db_instance:
+                response = Response()
+                response.status_code = status.HTTP_201_CREATED
+                response.data = {
+                    "message": "Successfully Created."
+                }
+                return response
+            else:
+                response = Response()
+                response.status_code = status.HTTP_400_BAD_REQUEST
+                response.data = {
+                    "message": "Data Invalid."
+                }
+                return response
 
 
 class GetChoices(APIView):
@@ -349,20 +466,17 @@ class EditProfile(UpdateAPIView, CreateAPIView):
     lookup_url_kwarg = "userid"
     authentication_classes = (TokenAuthentication,)
 
-    response = Response
+    response = Response()
 
     def get_object(self):
-        obj = self.user_model.objects.filter(user=self.kwargs[self.lookup_url_kwarg]).first()
+        obj = self.user_model.objects.filter(user_id=self.kwargs[self.lookup_url_kwarg]).first()
         return obj
 
-    # request has 3 diffrent row {"Telephone", "Mail", "Pin"}
+    # request has 3 diffrent row {"Name", "Surname", "Title"}
     def post(self, request, **kwargs):
-        # If a type has a custom uri for example 'Telephone' has 'tel://' searches
 
         obj = self.get_object()
-
         data = {
-            "user": request.data["user"],
             "title": request.data["title"]
         }
 
@@ -370,9 +484,19 @@ class EditProfile(UpdateAPIView, CreateAPIView):
 
         if obj is None:
             self.response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            return self.response
         else:
             if serializer.is_valid(raise_exception=True):
-                obj.user = data["user"]
                 obj.title = data["title"]
                 obj.save()
                 self.response.status_code = status.HTTP_200_OK
+                self.response.data = {
+                    "message": "Updated Succesfully."
+                }
+                return self.response
+            else:
+                self.response.status_code = status.HTTP_400_BAD_REQUEST
+                self.response.data = {
+                    "message": "Bad Request."
+                }
+                return self.response

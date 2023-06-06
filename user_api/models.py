@@ -92,13 +92,16 @@ class Social(models.Model):
     user = models.ForeignKey(AppUser, on_delete=models.CASCADE)
 
     class SocialChoices(models.TextChoices):
-        BANK = "Bank"
+        #BANK = "Bank"
         BEHANCE = "Behance"
         FACEBOOK = "Facebook"
         INSTAGRAM = "Instagram"
         LINKEDIN = "Linkedin"
         SNAPCHAT = "Snapchat"
         TWITTER = "Twitter"
+        TINDER = "Tinder"
+        TIKTOK = "Tiktok"
+        BLOG = "Blog"
 
     type = models.CharField(
         max_length=50,

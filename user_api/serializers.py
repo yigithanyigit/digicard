@@ -54,7 +54,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 class ImageSeriliazer(serializers.ModelSerializer):
     class Meta:
         model = Image
-        fields = ["image"]
+        fields = ["user", "image"]
 
 
 class UserAttributesSerializer(serializers.Serializer):
@@ -73,5 +73,5 @@ class UserProfileSerializer(serializers.ModelSerializer):
     # To prevent multiple users we do not provide change name options
     class Meta:
         model = get_user_model()
-        fields = ["user", "title"]
+        fields = ["title"]
 

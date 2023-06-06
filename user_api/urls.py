@@ -11,8 +11,10 @@ urlpatterns = [
 	path('user/c/<int:userid>/', views.GetUser.as_view()),
 	path('user/c/<int:userid>/social', views.GetUserSocial.as_view()),
 	path('user/add/social', views.AddSocial.as_view()),
-	path('user/<int:userid>/photo', views.GetPhoto.as_view()),
+	path('get/social/<int:contentid>', views.AddSocial.as_view()),
+	path('user/<int:userid>/photo', views.Photo.as_view()),
 	path('user/<int:userid>/edit/details', views.EditDetails.as_view()),
+	path('user/<int:userid>/edit/profile', views.EditProfile.as_view()),
 
 
 
